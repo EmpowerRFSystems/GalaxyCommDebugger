@@ -1,0 +1,69 @@
+
+# 1 "fifo.c"
+
+# 25 "app.h"
+void TinyDelay();
+void DigitalBreakout(unsigned int newData);
+
+# 17 "fifo.h"
+typedef struct {
+unsigned int buffer[32];
+unsigned char read;
+unsigned char write;
+unsigned char currentCount;
+unsigned char capacity;
+} buffer16;
+
+void FifoInitialize(buffer16 * buffer);
+unsigned char IsFifoFull(buffer16 * buffer);
+unsigned char IsFifoEmpty(buffer16 * buffer);
+unsigned char FifoEnqueue(buffer16* buffer, unsigned int data);
+unsigned int FifoDequeue(buffer16* buffer);
+
+# 4 "fifo.c"
+void FifoInitialize(buffer16* buffer) {
+buffer->read = 0;
+buffer->write = 0;
+buffer->capacity = sizeof(buffer->buffer) / sizeof(buffer->buffer[0]);
+buffer->currentCount = 0;
+}
+
+unsigned char IsFifoFull(buffer16* buffer) {
+if (buffer->currentCount == buffer->capacity) {
+return 1;
+}
+return 0;
+}
+
+unsigned char IsFifoEmpty(buffer16* buffer) {
+if (buffer->currentCount == 0) {
+return 1;
+}
+return 0;
+}
+
+unsigned char FifoEnqueue(buffer16* buffer, unsigned int data) {
+if (IsFifoFull(buffer)) {
+return 0;
+}
+buffer->buffer[buffer->write] = data;
+buffer->write++;
+if (buffer->write == 32)
+buffer->write = 0;
+buffer->currentCount++;
+return 1;
+}
+
+unsigned int FifoDequeue(buffer16* buffer) {
+unsigned int data;
+if (IsFifoEmpty(buffer)) {
+return 0;
+}
+data = buffer->buffer[buffer->read];
+buffer->read++;
+if (buffer->read == 32)
+buffer->read = 0;
+buffer->currentCount--;
+return data;
+}
+
