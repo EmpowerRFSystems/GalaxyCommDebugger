@@ -105,7 +105,7 @@ void UART_Initialize (	unsigned char uart_index,
         }
 	}
 
-    //BAUDCON1bits.DTRXP1 = 1;
+    BAUDCON1bits.DTRXP1 = 1;
     
 	// Enable Receiver Hardware Circuitry
     if (uart_index == UART1_INDEX) {
@@ -220,24 +220,25 @@ unsigned char IsTransmitterReady(unsigned char uart_index) {
 }
 
 void PutChar9 (unsigned char uart_index, unsigned int data) {
+    unsigned char delay;
+
     // Enable the transceiver
     EnableTransceiverTX(uart_index);
 
+    // Transceiver turn around time
+    delay = 0;
+    while (delay < 100) { delay++; }
+    
     // Ensure we are not currently waiting for a byte to be sent
     while (!_GetTxInterruptFlag(uart_index));
     
     // If word is 9 bits, configure TX9D bit, and must be done first.
-    if (data > 0x00FF) {
+    TXSTA1bits.TX9D = 0;
+    if ((data & 0x0100) == 0x0100) {
         if (uart_index == UART1_INDEX) {
-            TXSTA1bits.TX9 = 1;
+            TXSTA1bits.TX9D = 1;
         } else if (uart_index == UART2_INDEX) {
-            TXSTA2bits.TX9 = 1;
-        }
-    } else {
-        if (uart_index == UART1_INDEX) {
-            TXSTA1bits.TX9 = 0;
-        } else if (uart_index == UART2_INDEX) {
-            TXSTA2bits.TX9 = 0;
+            TXSTA2bits.TX9D = 1;
         }
     }
 
@@ -253,6 +254,10 @@ void PutChar9 (unsigned char uart_index, unsigned int data) {
         while (!TXSTA2bits.TRMT);
     }
     
+    // Transceiver turn around time
+    delay = 0;
+    while (delay < 100) { delay++; }
+
     DisableTransceiverTX(uart_index);
 }
 
@@ -338,46 +343,44 @@ unsigned int GetChar9(unsigned char uart_index) {
         unsigned int data = 0x0000;
 
         if (uart_index == UART1_INDEX) {        
-            // Deal with errors
+            // Framing error clears itself on read of RCREG
             if (RCSTA1bits.FERR) {
-                RCSTA1bits.CREN = 0;    // Clear the flag
-                RCSTA1bits.CREN = 1;
                 data = data | UART_FAULT_FRAMING_ERROR;
-            }
-            if (RCSTA1bits.OERR) {
-                RCSTA1bits.CREN = 0;    // Clear the flag
-                RCSTA1bits.CREN = 1;
-                data = data | UART_FAULT_OVERRUN_ERROR;
             }
             
             // Get buffer contents
             if (RCSTA1bits.RX9D == 1) {
                 data = data | 0x0100;
             }
-            
             data += RCREG1;
+
+            // Overruns must be cleared by cycling CREN bit
+            if (RCSTA1bits.OERR) {
+                data = data | UART_FAULT_OVERRUN_ERROR;
+                RCSTA1bits.CREN = 0;
+                RCSTA1bits.CREN = 1;
+            }
+
             return data;
             
         } else if (uart_index == UART2_INDEX) {
-            // Deal with errors
+            // Framing error clears itself on read of RCREG
             if (RCSTA2bits.FERR) {
-                RCSTA2bits.CREN = 0;    // Clear the flag
-                RCSTA2bits.CREN = 1;
                 data = data | UART_FAULT_FRAMING_ERROR;
-            }
-            if (RCSTA2bits.OERR) {
-                RCSTA2bits.CREN = 0;    // Clear the flag
-                RCSTA2bits.CREN = 1;
-                data = data | UART_FAULT_OVERRUN_ERROR;
             }
             
             // Get buffer contents
             if (RCSTA2bits.RX9D == 1) {
                 data = data | 0x0100;
             }
-            
             data += RCREG2;
-            return data;
+
+            // Overruns must be cleared by cycling CREN bit
+            if (RCSTA2bits.OERR) {
+                data = data | UART_FAULT_OVERRUN_ERROR;
+                RCSTA2bits.CREN = 0;
+                RCSTA2bits.CREN = 1;
+            }
         }
     }
     return UART_FAULT_NO_DATA_AVAILABLE;

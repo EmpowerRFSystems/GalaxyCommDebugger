@@ -16,6 +16,10 @@ extern "C" {
 
 #define FIFO_COUNT 4
 #define FIFO_SIZE 32
+#define HOST_RX_FIFO        0
+#define DEVICE_TX_FIFO      1
+#define DEVICE_RX_FIFO      2
+#define HOST_TX_FIFO        3
 
 #define TRUE 1
 #define FALSE 0
@@ -24,7 +28,9 @@ extern "C" {
     
 void TinyDelay();
 void DigitalBreakout(unsigned int newData);
-    
+unsigned long ToAscii(unsigned long in);
+unsigned char NibbleToAscii(unsigned char in);
+
 
 // LED PINS
 #define PIN_LED_RED_TRIS            TRISAbits.TRISA6

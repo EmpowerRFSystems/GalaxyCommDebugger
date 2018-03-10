@@ -83,6 +83,37 @@ unsigned int led_green_delay = 0;
 unsigned int led_red_delay = 0;
 unsigned char addressDatagramCount = 0;
 
+// High priority interrupt
+void interrupt tc_int(void) {
+    if (TMR1IE && TMR1IF)
+    {
+        TMR1IF=0;
+    }
+}
+
+// Low priority interrupt
+void interrupt low_priority LowIsr(void) {
+//    PIN_DIG_OUT_12_TRIS = 0;
+//    PIN_DIG_OUT_12_LATCH = 1;
+
+    if(INTCONbits.T0IF && INTCONbits.T0IE)  // If Timer flag is set & Interrupt is enabled
+    {
+        // Transmit a char
+        if (IsTransmitterReady(UART1_INDEX) && TXSTA1bits.TRMT == 1 && !IsFifoEmpty(&buffers[DEVICE_TX_FIFO])) {
+            unsigned int data = FifoDequeue(&buffers[DEVICE_TX_FIFO]);
+            PutChar9Default(data);
+            led_red_delay = 100;
+        }
+
+        unsigned int resetValue = 0xFFFF - 120;
+        TMR0H = (resetValue >> 8);
+        TMR0L = (resetValue & 0xFF);
+        INTCONbits.T0IF = 0;            // Clear the interrupt flag 
+    }
+
+//    PIN_DIG_OUT_12_LATCH = 0;
+}
+
 void main(void) {
 
     unsigned long l = 0;
@@ -94,6 +125,7 @@ void main(void) {
     unsigned char tf = 0;
     unsigned char c = 0;
     unsigned short crc;
+    unsigned char galaxyCommandCount = 0;
         
     ANSELA = 0;
     ANSELB = 0;
@@ -106,14 +138,14 @@ void main(void) {
             UART_9BIT_MODE,
             UART_INTERRUPTS_DISABLED
     );
-    UART_Initialize(
-            UART2_INDEX,
-            UART_BAUD_19200,
-            UART_9BIT_MODE,
-            UART_INTERRUPTS_DISABLED
-    );
+//    UART_Initialize(
+//            UART2_INDEX,
+//            UART_BAUD_115200,
+//            UART_8BIT_MODE,
+//            UART_INTERRUPTS_DISABLED
+//    );
     EnableTransceiverRX(UART1_INDEX);
-    EnableTransceiverRX(UART2_INDEX);
+//    EnableTransceiverRX(UART2_INDEX);
 
     // Initialize Digital Sequencer
     for (unsigned char x=0; x < 4; x++) {
@@ -129,6 +161,7 @@ void main(void) {
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0004;
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0001;
     galaxyCommands[c].crc = compute_crc(&galaxyCommands[c].buffer[0], galaxyCommands[c].word_count);
+    galaxyCommandCount++;
 
     // CHOOSE SLOT
     c=1;
@@ -138,6 +171,7 @@ void main(void) {
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0043;
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = (GALAXY_MAX_SLOTS - 1);
     galaxyCommands[c].crc = compute_crc(&galaxyCommands[c].buffer[0], galaxyCommands[c].word_count);
+    galaxyCommandCount++;
 
     // POLL SLOTS
     for (unsigned char slot=0; slot <= GALAXY_MAX_SLOTS; slot++) {
@@ -148,13 +182,48 @@ void main(void) {
         galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0050;
         galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = slot;
         galaxyCommands[c].crc = compute_crc(&galaxyCommands[c].buffer[0], galaxyCommands[c].word_count);
+        galaxyCommandCount++;
     }
 
     for (unsigned char x=0; x <= FIFO_COUNT; x++) {
         FifoInitialize(&buffers[x]);
     };
 
+//    T1CON = 0x1;               //Configure Timer1 interrupt
+//    PIE1bits.TMR1IE = 1;           
+//    INTCONbits.PEIE = 1;
+//    RCONbits.IPEN=0x01;
+//    IPR1bits.TMR1IP=0x01;            // TMR1 high priority ,TMR1 Overflow Interrupt Priority bit
+//    INTCONbits.GIE = 1;
+//    PIR1bits.TMR1IF = 0;
+
+    T0CONbits.TMR0ON = 0;                   // Off
+    T0CONbits.T08BIT = 0;                   // 16 bit
+    T0CONbits.T0CS = 0;                     // Clocked by instruction cycle (FOSC/4)
+    T0CONbits.T0SE = 0;                     // Low to high transition
+    T0CONbits.PSA = 0;                      // Use prescaler
+    T0CON = (T0CON & 0xF8) | 0x07;          // 1:256 prescaler
+    INTCON2bits.TMR0IP=0x00;                // Use low priority ISR
+    INTCONbits.TMR0IE = 1;                  // Enable interrupt on TMR0 overflow
+    T0CONbits.TMR0ON = 1;                   // Enable the timer
+
+    RCONbits.IPEN = 1;                      // Enable interrupt priorities
+    INTCONbits.GIEL = 1;                    // Enable Global Low Priority Interrupts
+    INTCONbits.GIE = 1;                     // Enable interrupts
+
     while (1) {
+        PIN_DIG_OUT_12_TRIS = 0;
+        if (PIN_DIG_OUT_12_LATCH == 0) {
+            PIN_DIG_OUT_12_LATCH = 1;
+        } else {
+            PIN_DIG_OUT_12_LATCH = 0;
+        }
+
+        PIN_DIG_OUT_9_TRIS = 0;
+        PIN_DIG_OUT_9_LATCH = RCSTA1bits.FERR;
+        PIN_DIG_OUT_10_TRIS = 0;
+        PIN_DIG_OUT_10_LATCH = RCSTA1bits.OERR;
+
         TinyDelay();
 
         // LED Control
@@ -181,26 +250,23 @@ void main(void) {
             PIN_LED_GREEN_TRIS = 1;
         }
 
-        if (l == 300000) {
-            while (!IsFifoEmpty(&buffers[1])) {
-                TinyDelay();
-            }
-            
+        TinyDelay();
+
+        if (l == 700000) {
             for (unsigned char k=0; k < galaxyCommands[commandNumber].word_count; k++) {
-                led_red_delay = 5000;
-                FifoEnqueue(&buffers[1], galaxyCommands[commandNumber].buffer[k]);
+                FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].buffer[k]);
             }    
-            FifoEnqueue(&buffers[1], galaxyCommands[commandNumber].crc >> 8);
-            FifoEnqueue(&buffers[1], galaxyCommands[commandNumber].crc & 0xFF);
+            FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].crc >> 8);
+            FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].crc & 0xFF);
             
             commandNumber++;
-            if (commandNumber >= GALAXY_COMMAND_COUNT) {
+            if (commandNumber > galaxyCommandCount) {
                 commandNumber = 2;
             }
             
             l = 0;
         }
-                
+
         l++;
     }
  
@@ -208,21 +274,52 @@ void main(void) {
 
 void TinyDelay() {
     // Receive a char
-    if (IsRxDataAvailable(UART1_INDEX)) {
-        if (!IsFifoFull(&buffers[2])) {
-            unsigned int data = GetChar9(UART1_INDEX);
-            FifoEnqueue(&buffers[2], data);
-        }
+    if (IsRxDataAvailable(UART1_INDEX) && !IsFifoFull(&buffers[DEVICE_RX_FIFO])) {
+        unsigned int data = GetChar9(UART1_INDEX);
+        //FifoEnqueue(&buffers[DEVICE_RX_FIFO], data);
+        DigitalBreakout(data);
+        led_green_delay = 5000;
     }
 
-    if (!IsFifoEmpty(&buffers[2])) {
-        led_green_delay = 10000;
-        DigitalBreakout(FifoDequeue(&buffers[2]));
-    }
-    
-    // Transmit a char
-    if (IsTransmitterReady(UART1_INDEX) && !IsFifoEmpty(&buffers[1])) {
-        PutChar9Default(FifoDequeue(&buffers[1]));
+//    if (!IsFifoEmpty(&buffers[DEVICE_RX_FIFO])) {
+//        led_green_delay = 10000;
+//        unsigned int temp = FifoDequeue(&buffers[DEVICE_RX_FIFO]);
+//        DigitalBreakout(temp);
+//        unsigned long temp2 = ToAscii(temp);
+//    }
+
+}
+
+unsigned long ToAscii(unsigned long in) {
+    unsigned long temp;
+    temp = NibbleToAscii((unsigned char)(in >> 12));
+    temp = temp << 8;
+    temp += NibbleToAscii((unsigned char)(in >> 8));
+    temp = temp << 8;
+    temp += NibbleToAscii((unsigned char)(in >> 4));
+    temp = temp << 8;
+    temp += NibbleToAscii((unsigned char)(in));
+    return temp;
+}
+
+unsigned char NibbleToAscii(unsigned char in) {
+    in = in & 0x0F;
+    if (in >= 0x00 && in <= 0x09) {
+        return '0' + in;
+    } else if (in == 0x0A) {
+        return 'A';
+    } else if (in == 0x0B) {
+        return 'B';
+    } else if (in == 0x0C) {
+        return 'C';
+    } else if (in == 0x0D) {
+        return 'D';
+    } else if (in == 0x0E) {
+        return 'E';
+    } else if (in == 0x0F) {
+        return 'F';
+    } else {
+        return '?';
     }
 }
 
@@ -234,66 +331,62 @@ void DigitalBreakout(unsigned int newData) {
     // Store new data at end of shift register
     digitalOutHyst[DIGITAL_OUT_WORD_COUNT - 1] = newData;
 
-    // Reset when disconnect datagram is seen
-//    if (digitalOutHyst[0] == 0x01FF &&
-//        digitalOutHyst[1] == 0x0007 &&
-//        digitalOutHyst[2] == 0x0057 &&
-//        digitalOutHyst[3] == 0x0004) {
-//        addressDatagramCount = 0;
-//    } else if (addressDatagramCount < 255 && ((newData & 0x0100) == 0x0100)) {
-//        addressDatagramCount++;
-//    }
+    if ((newData & 0x01FF) == 0x0100) {
+        newData = newData | 0x0800;
+    }
     
     unsigned int output = newData;
 
-    unsigned int mask = 0x4000;
-    PIN_DIG_OUT_14_TRIS = 0;
-    if ((output & mask) == mask) {
-        PIN_DIG_OUT_14_LATCH = 1;
-    } else {
-        PIN_DIG_OUT_14_LATCH = 0;
-    }
+//    unsigned int mask = 0x4000;
+
+//    PIN_DIG_OUT_14_TRIS = 0;
+//    if ((output & mask) == mask) {
+//        PIN_DIG_OUT_14_LATCH = 1;
+//    } else {
+//        PIN_DIG_OUT_14_LATCH = 0;
+//    }
+//    
+//    mask = mask >> 1;
+//    PIN_DIG_OUT_13_TRIS = 0;
+//    if ((output & mask) == mask) {
+//        PIN_DIG_OUT_13_LATCH = 1;
+//    } else {
+//        PIN_DIG_OUT_13_LATCH = 0;
+//    }
+//    
+//    mask = mask >> 1;
+//    PIN_DIG_OUT_12_TRIS = 0;
+//    if ((output & mask) == mask) {
+//        PIN_DIG_OUT_12_LATCH = 1;
+//    } else {
+//        PIN_DIG_OUT_12_LATCH = 0;
+//    }
+//    
+//    mask = mask >> 1;
+//    PIN_DIG_OUT_11_TRIS = 0;
+//    if ((output & mask) == mask) {
+//        PIN_DIG_OUT_11_LATCH = 1;
+//    } else {
+//        PIN_DIG_OUT_11_LATCH = 0;
+//    }
+//    
+//    mask = mask >> 1;
+//    PIN_DIG_OUT_10_TRIS = 0;
+//    if ((output & mask) == mask) {
+//        PIN_DIG_OUT_10_LATCH = 1;
+//    } else {
+//        PIN_DIG_OUT_10_LATCH = 0;
+//    }
+//    
+//    mask = mask >> 1;
+//    PIN_DIG_OUT_9_TRIS = 0;
+//    if ((output & mask) == mask) {
+//        PIN_DIG_OUT_9_LATCH = 1;
+//    } else {
+//        PIN_DIG_OUT_9_LATCH = 0;
+//    }
     
-    mask = mask >> 1;
-    PIN_DIG_OUT_13_TRIS = 0;
-    if ((output & mask) == mask) {
-        PIN_DIG_OUT_13_LATCH = 1;
-    } else {
-        PIN_DIG_OUT_13_LATCH = 0;
-    }
-    
-    mask = mask >> 1;
-    PIN_DIG_OUT_12_TRIS = 0;
-    if ((output & mask) == mask) {
-        PIN_DIG_OUT_12_LATCH = 1;
-    } else {
-        PIN_DIG_OUT_12_LATCH = 0;
-    }
-    
-    mask = mask >> 1;
-    PIN_DIG_OUT_11_TRIS = 0;
-    if ((output & mask) == mask) {
-        PIN_DIG_OUT_11_LATCH = 1;
-    } else {
-        PIN_DIG_OUT_11_LATCH = 0;
-    }
-    
-    mask = mask >> 1;
-    PIN_DIG_OUT_10_TRIS = 0;
-    if ((output & mask) == mask) {
-        PIN_DIG_OUT_10_LATCH = 1;
-    } else {
-        PIN_DIG_OUT_10_LATCH = 0;
-    }
-    
-    mask = mask >> 1;
-    PIN_DIG_OUT_9_TRIS = 0;
-    if ((output & mask) == mask) {
-        PIN_DIG_OUT_9_LATCH = 1;
-    } else {
-        PIN_DIG_OUT_9_LATCH = 0;
-    }
-    
+    unsigned int mask = 0x0200;
     mask = mask >> 1;
     PIN_DIG_OUT_8_TRIS = 0;
     if ((output & mask) == mask) {
