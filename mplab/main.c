@@ -102,7 +102,7 @@ void interrupt low_priority LowIsr(void) {
         if (IsTransmitterReady(UART1_INDEX) && TXSTA1bits.TRMT == 1 && !IsFifoEmpty(&buffers[DEVICE_TX_FIFO])) {
             unsigned int data = FifoDequeue(&buffers[DEVICE_TX_FIFO]);
             PutChar9Default(data);
-            led_red_delay = 100;
+            led_red_delay = 2500;
         }
 
         unsigned int resetValue = 0xFFFF - 120;
@@ -153,7 +153,7 @@ void main(void) {
     }
         
     // DISCONNECT
-    c=0;
+    c = 0;
     galaxyCommands[c].word_count = 0;
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x01FF;
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0007;
@@ -164,7 +164,7 @@ void main(void) {
     galaxyCommandCount++;
 
     // CHOOSE SLOT
-    c=1;
+    c = 1;
     galaxyCommands[c].word_count = 0;
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x01FF;
     galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0006;
@@ -174,14 +174,15 @@ void main(void) {
     galaxyCommandCount++;
 
     // POLL SLOTS
+    c = 2;
     for (unsigned char slot=0; slot <= GALAXY_MAX_SLOTS; slot++) {
-        c++;
         galaxyCommands[c].word_count = 0;
         galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x01FF;
         galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0006;
         galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = 0x0050;
         galaxyCommands[c].buffer[galaxyCommands[c].word_count++] = slot;
         galaxyCommands[c].crc = compute_crc(&galaxyCommands[c].buffer[0], galaxyCommands[c].word_count);
+        c++;
         galaxyCommandCount++;
     }
 

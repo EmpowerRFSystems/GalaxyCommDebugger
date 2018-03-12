@@ -39,8 +39,8 @@ unsigned int const table_crc[256] = {
 #endif
 
 #define GALAXY_BUFFER_SIZE 20
-#define GALAXY_MAX_SLOTS 1
-#define GALAXY_COMMAND_COUNT (GALAXY_MAX_SLOTS + 2)
+#define GALAXY_MAX_SLOTS 3
+#define GALAXY_COMMAND_COUNT (5)
 
 typedef struct {
     unsigned int buffer[GALAXY_BUFFER_SIZE];
