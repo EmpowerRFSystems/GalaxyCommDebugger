@@ -84,7 +84,7 @@ unsigned int led_red_delay = 0;
 unsigned char addressDatagramCount = 0;
 
 // High priority interrupt
-void interrupt tc_int(void) {
+void __interrupt(high_priority) HighIsr (void) {
     if (TMR1IE && TMR1IF)
     {
         TMR1IF=0;
@@ -92,10 +92,7 @@ void interrupt tc_int(void) {
 }
 
 // Low priority interrupt
-void interrupt low_priority LowIsr(void) {
-//    PIN_DIG_OUT_12_TRIS = 0;
-//    PIN_DIG_OUT_12_LATCH = 1;
-
+void __interrupt(low_priority) LowIsr(void) {
     if(INTCONbits.T0IF && INTCONbits.T0IE)  // If Timer flag is set & Interrupt is enabled
     {
         // Transmit a char
@@ -110,8 +107,6 @@ void interrupt low_priority LowIsr(void) {
         TMR0L = (resetValue & 0xFF);
         INTCONbits.T0IF = 0;            // Clear the interrupt flag 
     }
-
-//    PIN_DIG_OUT_12_LATCH = 0;
 }
 
 void main(void) {
@@ -213,20 +208,6 @@ void main(void) {
     INTCONbits.GIE = 1;                     // Enable interrupts
 
     while (1) {
-        PIN_DIG_OUT_12_TRIS = 0;
-        if (PIN_DIG_OUT_12_LATCH == 0) {
-            PIN_DIG_OUT_12_LATCH = 1;
-        } else {
-            PIN_DIG_OUT_12_LATCH = 0;
-        }
-
-        PIN_DIG_OUT_9_TRIS = 0;
-        PIN_DIG_OUT_9_LATCH = RCSTA1bits.FERR;
-        PIN_DIG_OUT_10_TRIS = 0;
-        PIN_DIG_OUT_10_LATCH = RCSTA1bits.OERR;
-
-        TinyDelay();
-
         // LED Control
         if (l % 32768 == 0) {
             PIN_LED_BLUE_TRIS = 0;
@@ -253,20 +234,20 @@ void main(void) {
 
         TinyDelay();
 
-        if (l == 700000) {
-            for (unsigned char k=0; k < galaxyCommands[commandNumber].word_count; k++) {
-                FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].buffer[k]);
-            }    
-            FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].crc >> 8);
-            FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].crc & 0xFF);
-            
-            commandNumber++;
-            if (commandNumber > galaxyCommandCount) {
-                commandNumber = 2;
-            }
-            
-            l = 0;
-        }
+//        if (l == 700000) {
+//            for (unsigned char k=0; k < galaxyCommands[commandNumber].word_count; k++) {
+//                FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].buffer[k]);
+//            }    
+//            FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].crc >> 8);
+//            FifoEnqueue(&buffers[DEVICE_TX_FIFO], galaxyCommands[commandNumber].crc & 0xFF);
+//            
+//            commandNumber++;
+//            if (commandNumber > galaxyCommandCount) {
+//                commandNumber = 2;
+//            }
+//            
+//            l = 0;
+//        }
 
         l++;
     }
@@ -281,14 +262,6 @@ void TinyDelay() {
         DigitalBreakout(data);
         led_green_delay = 5000;
     }
-
-//    if (!IsFifoEmpty(&buffers[DEVICE_RX_FIFO])) {
-//        led_green_delay = 10000;
-//        unsigned int temp = FifoDequeue(&buffers[DEVICE_RX_FIFO]);
-//        DigitalBreakout(temp);
-//        unsigned long temp2 = ToAscii(temp);
-//    }
-
 }
 
 unsigned long ToAscii(unsigned long in) {
@@ -327,67 +300,45 @@ unsigned char NibbleToAscii(unsigned char in) {
 void DigitalBreakout(unsigned int newData) {
     // Shift hysteresis words
     for (unsigned char x=0; x < (DIGITAL_OUT_WORD_COUNT - 1); x++) {
-        digitalOutHyst[x] = digitalOutHyst[x+1];
+        digitalOutHyst[x] = 0x1FF & digitalOutHyst[x+1];
     }
     // Store new data at end of shift register
-    digitalOutHyst[DIGITAL_OUT_WORD_COUNT - 1] = newData;
+    digitalOutHyst[DIGITAL_OUT_WORD_COUNT - 1] = 0x1FF & newData;
+    
+    // Output trigger signal when matching sequential pattern occurs
+    PIN_DIG_OUT_12_TRIS = 0;
+    if (digitalOutHyst[0] == 0x100 && digitalOutHyst[1] == 0x017 && digitalOutHyst[2] == 0x072) {
+        PIN_DIG_OUT_12_LATCH = 1;
+    } else {
+        PIN_DIG_OUT_12_LATCH = 0;
+    }
 
-    if ((newData & 0x01FF) == 0x0100) {
-        newData = newData | 0x0800;
+    unsigned int output = newData;
+    unsigned int mask = 0x0800;                 // No data available
+    PIN_DIG_OUT_11_TRIS = 0;
+    if ((output & mask) == mask) {
+        PIN_DIG_OUT_11_LATCH = 1;
+    } else {
+        PIN_DIG_OUT_11_LATCH = 0;
     }
     
-    unsigned int output = newData;
-
-//    unsigned int mask = 0x4000;
-
-//    PIN_DIG_OUT_14_TRIS = 0;
-//    if ((output & mask) == mask) {
-//        PIN_DIG_OUT_14_LATCH = 1;
-//    } else {
-//        PIN_DIG_OUT_14_LATCH = 0;
-//    }
-//    
-//    mask = mask >> 1;
-//    PIN_DIG_OUT_13_TRIS = 0;
-//    if ((output & mask) == mask) {
-//        PIN_DIG_OUT_13_LATCH = 1;
-//    } else {
-//        PIN_DIG_OUT_13_LATCH = 0;
-//    }
-//    
-//    mask = mask >> 1;
-//    PIN_DIG_OUT_12_TRIS = 0;
-//    if ((output & mask) == mask) {
-//        PIN_DIG_OUT_12_LATCH = 1;
-//    } else {
-//        PIN_DIG_OUT_12_LATCH = 0;
-//    }
-//    
-//    mask = mask >> 1;
-//    PIN_DIG_OUT_11_TRIS = 0;
-//    if ((output & mask) == mask) {
-//        PIN_DIG_OUT_11_LATCH = 1;
-//    } else {
-//        PIN_DIG_OUT_11_LATCH = 0;
-//    }
-//    
-//    mask = mask >> 1;
-//    PIN_DIG_OUT_10_TRIS = 0;
-//    if ((output & mask) == mask) {
-//        PIN_DIG_OUT_10_LATCH = 1;
-//    } else {
-//        PIN_DIG_OUT_10_LATCH = 0;
-//    }
-//    
-//    mask = mask >> 1;
-//    PIN_DIG_OUT_9_TRIS = 0;
-//    if ((output & mask) == mask) {
-//        PIN_DIG_OUT_9_LATCH = 1;
-//    } else {
-//        PIN_DIG_OUT_9_LATCH = 0;
-//    }
+    mask = mask >> 1;                           // Framing error
+    PIN_DIG_OUT_10_TRIS = 0;
+    if ((output & mask) == mask) {
+        PIN_DIG_OUT_10_LATCH = 1;
+    } else {
+        PIN_DIG_OUT_10_LATCH = 0;
+    }
     
-    unsigned int mask = 0x0200;
+    mask = mask >> 1;                           // 9th bit
+    PIN_DIG_OUT_9_TRIS = 0;
+    if ((output & mask) == mask) {
+        PIN_DIG_OUT_9_LATCH = 1;
+    } else {
+        PIN_DIG_OUT_9_LATCH = 0;
+    }
+    
+//    unsigned int mask = 0x0200;
     mask = mask >> 1;
     PIN_DIG_OUT_8_TRIS = 0;
     if ((output & mask) == mask) {

@@ -24,7 +24,7 @@ extern "C" {
 #define TRUE 1
 #define FALSE 0
 
-#define DIGITAL_OUT_WORD_COUNT 4
+#define DIGITAL_OUT_WORD_COUNT 3
     
 void TinyDelay();
 void DigitalBreakout(unsigned int newData);
@@ -42,8 +42,6 @@ unsigned char NibbleToAscii(unsigned char in);
 
 
 // DIGITAL BREAKOUT PINS
-#define PIN_DIG_OUT_15_TRIS         TRISBbits.TRISB5
-#define PIN_DIG_OUT_15_LATCH        LATBbits.LATB5
 #define PIN_DIG_OUT_14_TRIS         TRISBbits.TRISB4
 #define PIN_DIG_OUT_14_LATCH        LATBbits.LATB4
 #define PIN_DIG_OUT_13_TRIS         TRISBbits.TRISB3
